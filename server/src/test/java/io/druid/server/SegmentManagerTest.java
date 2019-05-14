@@ -64,7 +64,7 @@ public class SegmentManagerTest
     }
 
     @Override
-    public Segment getSegment(final DataSegment segment) throws SegmentLoadingException
+    public Segment getSegment(final DataSegment segment, boolean lazy) throws SegmentLoadingException
     {
       return new SegmentForTesting(
           MapUtils.getString(segment.getLoadSpec(), "version"),
@@ -227,7 +227,7 @@ public class SegmentManagerTest
     final List<Future<Boolean>> futures = segments.stream()
                                                   .map(
                                                       segment -> executor.submit(
-                                                          () -> segmentManager.loadSegment(segment)
+                                                          () -> segmentManager.loadSegment(segment, false)
                                                       )
                                                   )
                                                   .collect(Collectors.toList());
@@ -243,7 +243,7 @@ public class SegmentManagerTest
   public void testDropSegment() throws SegmentLoadingException, ExecutionException, InterruptedException
   {
     for (DataSegment eachSegment : segments) {
-      Assert.assertTrue(segmentManager.loadSegment(eachSegment));
+      Assert.assertTrue(segmentManager.loadSegment(eachSegment, false));
     }
 
     final List<Future<Void>> futures = ImmutableList.of(segments.get(0), segments.get(2)).stream()
@@ -269,14 +269,14 @@ public class SegmentManagerTest
   @Test
   public void testLoadDropSegment() throws SegmentLoadingException, ExecutionException, InterruptedException
   {
-    Assert.assertTrue(segmentManager.loadSegment(segments.get(0)));
-    Assert.assertTrue(segmentManager.loadSegment(segments.get(2)));
+    Assert.assertTrue(segmentManager.loadSegment(segments.get(0), false));
+    Assert.assertTrue(segmentManager.loadSegment(segments.get(2), false));
 
     final List<Future<Boolean>> loadFutures = ImmutableList.of(segments.get(1), segments.get(3), segments.get(4))
                                                            .stream()
                                                            .map(
                                                                segment -> executor.submit(
-                                                                   () -> segmentManager.loadSegment(segment)
+                                                                   () -> segmentManager.loadSegment(segment, false)
                                                                )
                                                            )
                                                            .collect(Collectors.toList());
@@ -307,10 +307,10 @@ public class SegmentManagerTest
   public void testLoadDuplicatedSegmentsSequentially() throws SegmentLoadingException
   {
     for (DataSegment segment : segments) {
-      Assert.assertTrue(segmentManager.loadSegment(segment));
+      Assert.assertTrue(segmentManager.loadSegment(segment, false));
     }
     // try to load an existing segment
-    Assert.assertFalse(segmentManager.loadSegment(segments.get(0)));
+    Assert.assertFalse(segmentManager.loadSegment(segments.get(0), false));
 
     assertResult(segments);
   }
@@ -322,7 +322,7 @@ public class SegmentManagerTest
     final List<Future<Boolean>> futures = ImmutableList.of(segments.get(0), segments.get(0), segments.get(0)).stream()
                                                        .map(
                                                            segment -> executor.submit(
-                                                               () -> segmentManager.loadSegment(segment)
+                                                               () -> segmentManager.loadSegment(segment, false)
                                                            )
                                                        )
                                                        .collect(Collectors.toList());
@@ -343,7 +343,7 @@ public class SegmentManagerTest
   @Test
   public void testNonExistingSegmentsSequentially() throws SegmentLoadingException
   {
-    Assert.assertTrue(segmentManager.loadSegment(segments.get(0)));
+    Assert.assertTrue(segmentManager.loadSegment(segments.get(0), false));
 
     // try to drop a non-existing segment of different data source
     segmentManager.dropSegment(segments.get(2));
@@ -356,7 +356,7 @@ public class SegmentManagerTest
   public void testNonExistingSegmentsInParallel()
       throws SegmentLoadingException, ExecutionException, InterruptedException
   {
-    segmentManager.loadSegment(segments.get(0));
+    segmentManager.loadSegment(segments.get(0), false);
     final List<Future<Void>> futures = ImmutableList.of(segments.get(1), segments.get(2)).stream()
                                                        .map(
                                                            segment -> executor.submit(
@@ -378,7 +378,7 @@ public class SegmentManagerTest
   @Test
   public void testRemoveEmptyTimeline() throws SegmentLoadingException
   {
-    segmentManager.loadSegment(segments.get(0));
+    segmentManager.loadSegment(segments.get(0), false);
     assertResult(ImmutableList.of(segments.get(0)));
     Assert.assertEquals(1, segmentManager.getDataSources().size());
     segmentManager.dropSegment(segments.get(0));
@@ -416,7 +416,7 @@ public class SegmentManagerTest
       expectedTimeline.add(
           segment.getInterval(),
           segment.getVersion(),
-          segment.getShardSpec().createChunk(new ReferenceCountingSegment(segmentLoader.getSegment(segment)))
+          segment.getShardSpec().createChunk(new ReferenceCountingSegment(segmentLoader.getSegment(segment, false)))
       );
     }
 

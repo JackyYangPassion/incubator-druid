@@ -23,7 +23,9 @@ import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
+import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
@@ -75,10 +77,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.util.Arrays;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 public class IndexIO
 {
@@ -186,12 +185,16 @@ public class IndexIO
 
   public QueryableIndex loadIndex(File inDir) throws IOException
   {
+    return loadIndex(inDir, false);
+  }
+  public QueryableIndex loadIndex(File inDir, boolean lazy) throws IOException
+  {
     final int version = SegmentUtils.getVersionFromDir(inDir);
 
     final IndexLoader loader = indexLoaders.get(version);
 
     if (loader != null) {
-      return loader.load(inDir, mapper);
+      return loader.load(inDir, mapper, lazy);
     } else {
       throw new ISE("Unknown index version[%s]", version);
     }
@@ -418,7 +421,7 @@ public class IndexIO
 
   interface IndexLoader
   {
-    QueryableIndex load(File inDir, ObjectMapper mapper) throws IOException;
+    QueryableIndex load(File inDir, ObjectMapper mapper, boolean lazy) throws IOException;
   }
 
   static class LegacyIndexLoader implements IndexLoader
@@ -433,11 +436,12 @@ public class IndexIO
     }
 
     @Override
-    public QueryableIndex load(File inDir, ObjectMapper mapper) throws IOException
+    public QueryableIndex load(File inDir, ObjectMapper mapper, boolean lazy) throws IOException
     {
       MMappedIndex index = legacyHandler.mapDir(inDir);
 
-      Map<String, Column> columns = Maps.newHashMap();
+
+      Map<String, Supplier<Column>> columns = new HashMap<>();
 
       for (String dimension : index.getAvailableDimensions()) {
         ColumnBuilder builder = new ColumnBuilder()
@@ -465,34 +469,43 @@ public class IndexIO
               )
           );
         }
-        columns.put(
-            dimension,
-            builder.build()
-        );
+        if (lazy) {
+          columns.put(dimension, Suppliers.memoize(() -> builder.build()));
+        } else {
+          Column columnHolder = builder.build();
+          columns.put(dimension, () -> columnHolder);
+        }
+
       }
 
       for (String metric : index.getAvailableMetrics()) {
         final MetricHolder metricHolder = index.getMetricHolder(metric);
         if (metricHolder.getType() == MetricHolder.MetricType.FLOAT) {
-          columns.put(
-              metric,
-              new ColumnBuilder()
-                  .setType(ValueType.FLOAT)
-                  .setGenericColumn(new FloatGenericColumnSupplier(metricHolder.floatType))
-                  .build()
-          );
+          ColumnBuilder builder = new ColumnBuilder()
+              .setType(ValueType.FLOAT)
+                  .setGenericColumn(new FloatGenericColumnSupplier(metricHolder.floatType));
+
+          if (lazy) {
+            columns.put(metric, Suppliers.memoize(() -> builder.build()));
+          } else {
+            Column columnHolder = builder.build();
+            columns.put(metric, () -> columnHolder);
+          }
+
         } else if (metricHolder.getType() == MetricHolder.MetricType.COMPLEX) {
-          columns.put(
-              metric,
-              new ColumnBuilder()
-                  .setType(ValueType.COMPLEX)
-                  .setComplexColumn(
-                      new ComplexColumnPartSupplier(
+          ColumnBuilder builder = new ColumnBuilder()
+              .setType(ValueType.COMPLEX)
+              .setComplexColumn(
+                  new ComplexColumnPartSupplier(
                           metricHolder.getTypeName(), (GenericIndexed) metricHolder.complexType
                       )
-                  )
-                  .build()
-          );
+              );
+          if (lazy) {
+            columns.put(metric, Suppliers.memoize(() -> builder.build()));
+          } else {
+            Column columnHolder = builder.build();
+            columns.put(metric, () -> columnHolder);
+          }
         }
       }
 
@@ -505,12 +518,17 @@ public class IndexIO
       }
 
       String[] cols = colSet.toArray(new String[colSet.size()]);
-      columns.put(
-          Column.TIME_COLUMN_NAME, new ColumnBuilder()
+
+      ColumnBuilder builder = new ColumnBuilder()
               .setType(ValueType.LONG)
-              .setGenericColumn(new LongGenericColumnSupplier(index.timestamps))
-              .build()
-      );
+              .setGenericColumn(new LongGenericColumnSupplier(index.timestamps));
+      if (lazy) {
+        columns.put(Column.TIME_COLUMN_NAME, Suppliers.memoize(() -> builder.build()));
+      } else {
+        Column columnHolder = builder.build();
+        columns.put(Column.TIME_COLUMN_NAME, () -> columnHolder);
+      }
+
       return new SimpleQueryableIndex(
           index.getDataInterval(),
           new ArrayIndexed<>(cols, String.class),
@@ -518,7 +536,8 @@ public class IndexIO
           new ConciseBitmapFactory(),
           columns,
           index.getFileMapper(),
-          null
+          null,
+          lazy
       );
     }
   }
@@ -533,7 +552,7 @@ public class IndexIO
     }
 
     @Override
-    public QueryableIndex load(File inDir, ObjectMapper mapper) throws IOException
+    public QueryableIndex load(File inDir, ObjectMapper mapper, boolean lazy) throws IOException
     {
       log.debug("Mapping v9 index[%s]", inDir);
       long startTime = System.currentTimeMillis();
@@ -593,16 +612,52 @@ public class IndexIO
         }
       }
 
-      Map<String, Column> columns = Maps.newHashMap();
+
+      Map<String, Supplier<Column>> columns = new HashMap<>();
 
       for (String columnName : cols) {
-        columns.put(columnName, deserializeColumn(mapper, smooshedFiles.mapFile(columnName), smooshedFiles));
+
+        ByteBuffer colBuffer = smooshedFiles.mapFile(columnName);
+
+        if (lazy) {
+          columns.put(columnName, Suppliers.memoize(
+              () -> {
+                try {
+                  return deserializeColumn(mapper, colBuffer, smooshedFiles);
+                }
+                catch (IOException e) {
+                  throw Throwables.propagate(e);
+                }
+              }
+          ));
+        } else {
+          Column columnHolder = deserializeColumn(mapper, colBuffer, smooshedFiles);
+          columns.put(columnName, () -> columnHolder);
+        }
+
       }
 
-      columns.put(Column.TIME_COLUMN_NAME, deserializeColumn(mapper, smooshedFiles.mapFile("__time"), smooshedFiles));
+      ByteBuffer timeBuffer = smooshedFiles.mapFile("__time");
+
+      if (lazy) {
+        columns.put(Column.TIME_COLUMN_NAME, Suppliers.memoize(
+            () -> {
+              try {
+                return deserializeColumn(mapper, timeBuffer, smooshedFiles);
+              }
+              catch (IOException e) {
+                throw Throwables.propagate(e);
+              }
+            }
+        ));
+      } else {
+        Column columnHolder = deserializeColumn(mapper, timeBuffer, smooshedFiles);
+        columns.put(Column.TIME_COLUMN_NAME, () -> columnHolder);
+      }
 
       final QueryableIndex index = new SimpleQueryableIndex(
-          dataInterval, cols, dims, segmentBitmapSerdeFactory.getBitmapFactory(), columns, smooshedFiles, metadata
+          dataInterval, cols, dims, segmentBitmapSerdeFactory.getBitmapFactory(), columns, smooshedFiles, metadata,
+          lazy
       );
 
       log.debug("Mapped v9 index[%s] in %,d millis", inDir, System.currentTimeMillis() - startTime);

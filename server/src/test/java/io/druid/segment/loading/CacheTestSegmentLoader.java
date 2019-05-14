@@ -49,7 +49,7 @@ public class CacheTestSegmentLoader implements SegmentLoader
   }
 
   @Override
-  public Segment getSegment(final DataSegment segment) throws SegmentLoadingException
+  public Segment getSegment(final DataSegment segment, boolean lazy) throws SegmentLoadingException
   {
     return new AbstractSegment()
     {

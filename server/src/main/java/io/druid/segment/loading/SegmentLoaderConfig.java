@@ -35,6 +35,9 @@ public class SegmentLoaderConfig
   @NotEmpty
   private List<StorageLocationConfig> locations = null;
 
+  @JsonProperty("lazyLoadOnStart")
+  private boolean lazyLoadOnStart = false;
+
   @JsonProperty("deleteOnRemove")
   private boolean deleteOnRemove = true;
 
@@ -59,6 +62,11 @@ public class SegmentLoaderConfig
   public List<StorageLocationConfig> getLocations()
   {
     return locations;
+  }
+
+  public boolean isLazyLoadOnStart()
+  {
+    return lazyLoadOnStart;
   }
 
   public boolean isDeleteOnRemove()

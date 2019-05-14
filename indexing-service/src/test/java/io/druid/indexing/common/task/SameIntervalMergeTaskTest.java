@@ -234,7 +234,7 @@ public class SameIntervalMergeTaskTest
               }
 
               @Override
-              public Segment getSegment(DataSegment segment) throws SegmentLoadingException
+              public Segment getSegment(DataSegment segment, boolean lazy) throws SegmentLoadingException
               {
                 return null;
               }

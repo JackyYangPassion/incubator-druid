@@ -24,6 +24,7 @@ import com.fasterxml.jackson.databind.introspect.AnnotationIntrospectorPair;
 import com.fasterxml.jackson.databind.jsontype.NamedType;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
@@ -587,18 +588,23 @@ public class CompactionTaskTest
         columnNames.add(Column.TIME_COLUMN_NAME);
         columnNames.addAll(segment.getDimensions());
         columnNames.addAll(segment.getMetrics());
-        final Map<String, Column> columnMap = new HashMap<>(columnNames.size());
+        final Map<String, Supplier<Column>> columnMap = new HashMap<>(columnNames.size());
+
         final List<AggregatorFactory> aggregatorFactories = new ArrayList<>(segment.getMetrics().size());
 
         for (String columnName : columnNames) {
           if (columnName.equals(MIXED_TYPE_COLUMN)) {
-            columnMap.put(columnName, createColumn(MIXED_TYPE_COLUMN_MAP.get(segment.getInterval())));
+            Column columnHolder = createColumn(MIXED_TYPE_COLUMN_MAP.get(segment.getInterval()));
+            columnMap.put(columnName, () -> columnHolder);
           } else if (DIMENSIONS.containsKey(columnName)) {
-            columnMap.put(columnName, createColumn(DIMENSIONS.get(columnName)));
+            Column columnHolder = createColumn(DIMENSIONS.get(columnName));
+            columnMap.put(columnName, () -> columnHolder);
           } else if (AGGREGATORS.containsKey(columnName)) {
-            columnMap.put(columnName, createColumn(AGGREGATORS.get(columnName)));
+            Column columnHolder = createColumn(AGGREGATORS.get(columnName));
+            columnMap.put(columnName, ()->columnHolder);
             aggregatorFactories.add(AGGREGATORS.get(columnName));
           }
+
         }
 
         final Metadata metadata = new Metadata();
@@ -614,7 +620,8 @@ public class CompactionTaskTest
                 null,
                 columnMap,
                 null,
-                metadata
+                metadata,
+                false
             )
         );
       }
@@ -640,7 +647,7 @@ public class CompactionTaskTest
                 index.getColumns(),
                 index.getFileMapper(),
                 null,
-                index.getDimensionHandlers()
+                () -> index.getDimensionHandlers()
             )
         );
       }
