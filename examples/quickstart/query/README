@@ -1,0 +1,8 @@
+查询：
+curl -L -H'Content-Type: application/json' -XPOST --data-binary @wikiticker_uniq_json.json http://localhost:8082/druid/v2/?pretty
+curl -L -H'Content-Type: application/json' -XPOST --data-binary @wikiticker_theta_json.json http://localhost:8082/druid/v2/?pretty
+curl -L -H'Content-Type: application/json' -XPOST --data-binary @wikiticker_hyperuniq_json.json http://localhost:8082/druid/v2/?pretty
+curl -L -H'Content-Type: application/json' -XPOST --a-binary @wikiticker_distinctcount.json http://localhost:8082/druid/v2/?pretty
+
+加载：
+

@@ -1,0 +1,1 @@
+{"query":"select count(*) as total_num  from wikiticker_theta where  __time = '2015-09-12'","resultFormat" : "objectLines"}

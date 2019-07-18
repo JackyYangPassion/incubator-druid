@@ -1,0 +1,21 @@
+{
+    "queryType":"timeseries",
+    "postAggregations":[
+
+    ],
+    "granularity":"ALL",
+    "dataSource":"wikiticker_theta",
+    "intervals":"2015-09-11T00:00:00+08:00/2015-09-13T00:00:00+08:00",
+    "aggregations":[
+        {
+            "name":"count",
+            "type":"count"
+        },
+        {
+            "name":"user_unique",
+            "type":"thetaSketch",
+	    "size": 1048576,
+            "fieldName":"user_unique"
+        }
+    ]
+}
